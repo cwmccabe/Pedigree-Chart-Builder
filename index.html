@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pedigree Chart Builder</title>
+  <style>
+    :root {
+      --bg: #f7f7f8;
+      --panel: #ffffff;
+      --line: #d8d8dd;
+      --text: #23242a;
+      --muted: #666b76;
+      --accent: #3559d6;
+      --accent-2: #2142ae;
+      --danger: #b3261e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .app { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+    .toolbox {
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      padding: 14px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fff;
+    }
+    h1 { font-size: 1.08rem; margin: 0 0 8px; }
+    h2 { font-size: 0.92rem; margin: 0 0 8px; }
+    p, li { font-size: 0.82rem; color: var(--muted); line-height: 1.45; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    button, .btn {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 7px 10px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      color: var(--text);
+    }
+    button:hover { border-color: #babcc6; }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    button.primary:hover { background: var(--accent-2); }
+    button.danger { color: var(--danger); border-color: #e8c7c5; }
+    input, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      font-size: 0.82rem;
+      padding: 7px 8px;
+      margin: 4px 0 8px;
+      background: #fff;
+    }
+    label { font-size: 0.78rem; color: var(--muted); }
+    .canvas-wrap { position: relative; overflow: hidden; }
+    svg { width: 100%; height: 100%; display: block; background: #fbfbfd; }
+    .node { cursor: move; }
+    .node.selected .node-frame { stroke: var(--accent); stroke-width: 3; }
+    .node-label {
+      font-size: 12px;
+      fill: #222;
+      pointer-events: none;
+      user-select: none;
+      text-anchor: middle;
+    }
+    .tooltip {
+      position: absolute;
+      min-width: 190px;
+      max-width: 280px;
+      background: #fff;
+      border: 1px solid var(--line);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+      border-radius: 9px;
+      padding: 8px;
+      font-size: 0.78rem;
+      z-index: 4;
+      display: none;
+    }
+    .tooltip .edit-link {
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: underline;
+      font-size: 0.76rem;
+    }
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.2);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+    }
+    .modal {
+      width: min(620px, 92vw);
+      max-height: 86vh;
+      overflow: auto;
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      box-shadow: 0 14px 40px rgba(0,0,0,0.2);
+      padding: 14px;
+      position: relative;
+    }
+    .modal .close {
+      position: absolute;
+      right: 9px;
+      top: 7px;
+      border: none;
+      background: transparent;
+      font-size: 18px;
+      cursor: pointer;
+      color: #666;
+    }
+    .grid2 { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .muted { color: var(--muted); font-size: 0.78rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .chip { font-size: 0.72rem; background: #f0f2f9; padding: 3px 7px; border-radius: 999px; border: 1px solid #d8def5; }
+    .mapping pre {
+      margin: 0;
+      background: #f9f9fb;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      overflow: auto;
+      font-size: 0.74rem;
+      color: #42475a;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="toolbox">
+      <h1>Pedigree Chart Builder</h1>
+      <div class="card">
+        <h2>Add Individual</h2>
+        <div class="row">
+          <button id="addMale">Male</button>
+          <button id="addFemale">Female</button>
+          <button id="addUnknown">Unknown</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Chart Actions</h2>
+        <div class="row">
+          <button id="saveBtn" class="primary">Export JSON</button>
+          <button id="importBtn">Import JSON</button>
+          <input type="file" id="importFile" accept="application/json" style="display:none" />
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <button id="schemaBtn">Schema Editor</button>
+          <button id="clearSelectionBtn">Clear Selection</button>
+        </div>
+      </div>
+
+      <div class="card" id="relationshipCard" style="display:none;">
+        <h2>Relationship Editor</h2>
+        <p id="selectionCountText"></p>
+        <div class="row" style="margin-bottom:8px;">
+          <button id="mkPartner">Set Partnership</button>
+          <button id="mkDivorce">Mark Divorce/Separation</button>
+        </div>
+        <div class="row" style="margin-bottom:8px;">
+          <button id="mkSiblings">Set Siblings</button>
+          <button id="mkTwins">Set Twins</button>
+          <button id="mkHalfSiblings">Set Half‑Siblings</button>
+        </div>
+        <label>Parent for selected children</label>
+        <select id="parentSelector"></select>
+        <button id="mkParentChild">Apply Parent→Child</button>
+        <div class="row" style="margin-top:8px;">
+          <button id="mkAdoption">Set Adoption (selected child)</button>
+        </div>
+        <p class="muted">Validation prevents impossible cycles and invalid combinations.</p>
+      </div>
+
+      <div class="card mapping">
+        <h2>GA4GH Mapping Notes</h2>
+        <pre id="mappingText"></pre>
+      </div>
+    </aside>
+
+    <main class="canvas-wrap">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="tooltip" class="tooltip"></div>
+    </main>
+  </div>
+
+  <div id="individualModalBackdrop" class="modal-backdrop">
+    <div class="modal" id="individualModal">
+      <button class="close" id="closeIndividualModal">✕</button>
+      <h2>Edit Individual</h2>
+      <div id="individualForm"></div>
+    </div>
+  </div>
+
+  <div id="schemaModalBackdrop" class="modal-backdrop">
+    <div class="modal" id="schemaModal">
+      <button class="close" id="closeSchemaModal">✕</button>
+      <h2>Schema Editor (customAttributes)</h2>
+      <p class="muted">These fields are exported under each individual's <code>customAttributes</code>.</p>
+      <div class="grid2">
+        <div>
+          <label>New attribute name</label>
+          <input id="newAttrName" placeholder="e.g. ethnicity" />
+        </div>
+        <div style="align-self:end">
+          <button id="addAttrBtn">Add Attribute</button>
+        </div>
+      </div>
+      <h3 style="font-size:0.85rem;margin-top:10px;">Current custom attributes</h3>
+      <div id="schemaList"></div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent || '');
+  if (isMobile) {
+    alert('Mobile devices are not supported. Please use a desktop or laptop browser.');
+  }
+
+  const state = {
+    nextId: 1,
+    individuals: [],
+    selectedIds: new Set(),
+    customSchema: [],
+    relationships: {
+      partnerships: [], // {a,b,status:'married'|'divorced'|'separated'}
+      siblingGroups: [], // {id,members:[...],type:'full'|'half'}
+      twinGroups: [], // {id,members:[...],kind:'identical'|'fraternal'}
+      parentChild: [], // {parentId,childId,adoption:false}
+    }
+  };
+
+  const defaults = {
+    sex: 'unknown',
+    affected: false,
+    proband: false,
+    deceased: false,
+    carrier: false
+  };
+
+  const canvas = document.getElementById('canvas');
+  const tooltip = document.getElementById('tooltip');
+  const relationshipCard = document.getElementById('relationshipCard');
+  const selectionCountText = document.getElementById('selectionCountText');
+  const parentSelector = document.getElementById('parentSelector');
+  const mappingText = document.getElementById('mappingText');
+
+  mappingText.textContent = [
+    'NSGC → GA4GH mapping used in this app:',
+    '- sex symbol: individuals[].sex (male/female/unknown)',
+    '- affected shading: individuals[].affected',
+    '- proband arrow: individuals[].proband',
+    '- deceased slash: individuals[].deceased',
+    '- carrier dot: individuals[].carrier',
+    '- custom text attributes: individuals[].customAttributes',
+    '- marriage/partnership/divorce/separation: relationships.partnerships[]',
+    '- parent–child line: relationships.parentChild[]',
+    '- sibship + half-siblings: relationships.siblingGroups[] (type full|half)',
+    '- twin relationship: relationships.twinGroups[]',
+    '- adoption: relationships.parentChild[].adoption=true',
+    'Note: relationship arrays are stored under non-standard relationships/custom data for interoperability.'
+  ].join('\n');
+
+  function makeId() { return `I${state.nextId++}`; }
+
+  function addIndividual(sex) {
+    const id = makeId();
+    const idx = state.individuals.length;
+    const x = 460 + (idx % 6) * 110;
+    const y = 110 + Math.floor(idx / 6) * 120;
+    const customAttributes = Object.fromEntries(state.customSchema.map((f) => [f, '']));
+    state.individuals.push({
+      id,
+      name: id,
+      x,
+      y,
+      sex,
+      affected: defaults.affected,
+      proband: defaults.proband,
+      deceased: defaults.deceased,
+      carrier: defaults.carrier,
+      customAttributes
+    });
+    state.selectedIds.clear();
+    state.selectedIds.add(id);
+    redraw();
+  }
+
+  function getIndividual(id) { return state.individuals.find((i) => i.id === id); }
+  function edgeKey(a, b) { return [a, b].sort().join('|'); }
+
+  function ensureSiblingGroup(memberIds, type='full') {
+    const sorted = [...new Set(memberIds)].sort();
+    const key = sorted.join('|');
+    let group = state.relationships.siblingGroups.find((g) => [...g.members].sort().join('|') === key);
+    if (!group) {
+      group = { id: `SG${Date.now()}${Math.random()}`, members: sorted, type };
+      state.relationships.siblingGroups.push(group);
+    } else {
+      group.type = type;
+    }
+  }
+
+  function getParentsOf(childId) {
+    return state.relationships.parentChild.filter((r) => r.childId === childId).map((r) => r.parentId);
+  }
+
+  function isAncestor(candidateAncestor, personId, seen = new Set()) {
+    if (candidateAncestor === personId) return true;
+    if (seen.has(personId)) return false;
+    seen.add(personId);
+    const parents = getParentsOf(personId);
+    for (const p of parents) {
+      if (p === candidateAncestor) return true;
+      if (isAncestor(candidateAncestor, p, seen)) return true;
+    }
+    return false;
+  }
+
+  function setPartnership(ids) {
+    if (ids.length !== 2) return alert('Partnership requires exactly two selected individuals.');
+    if (ids[0] === ids[1]) return;
+    const k = edgeKey(ids[0], ids[1]);
+    let rel = state.relationships.partnerships.find((p) => edgeKey(p.a, p.b) === k);
+    if (!rel) state.relationships.partnerships.push({ a: ids[0], b: ids[1], status: 'married' });
+    else rel.status = 'married';
+    redraw();
+  }
+
+  function setDivorce(ids) {
+    if (ids.length !== 2) return alert('Divorce/separation marker requires exactly two selected individuals.');
+    const k = edgeKey(ids[0], ids[1]);
+    const rel = state.relationships.partnerships.find((p) => edgeKey(p.a, p.b) === k);
+    if (!rel) return alert('Set partnership first, then mark divorce/separation.');
+    const mark = prompt('Type "divorced" or "separated"', rel.status === 'separated' ? 'separated' : 'divorced');
+    if (!mark) return;
+    if (!['divorced', 'separated'].includes(mark)) return alert('Use exactly: divorced or separated.');
+    rel.status = mark;
+    redraw();
+  }
+
+  function selectedIds() { return [...state.selectedIds]; }
+
+  function setSiblings(ids, type='full') {
+    if (ids.length < 2) return alert('Select at least two individuals for sibling relationship.');
+    ensureSiblingGroup(ids, type);
+    redraw();
+  }
+
+  function setTwins(ids) {
+    if (ids.length < 2) return alert('Select sibling individuals for twin relationship.');
+    const siblingsContain = state.relationships.siblingGroups.some((g) => ids.every((id) => g.members.includes(id)));
+    if (!siblingsContain) return alert('Twin relationship requires all selected people to be in the same sibling group.');
+    const kind = prompt('Twin type: "identical" or "fraternal"', 'identical');
+    if (!kind || !['identical', 'fraternal'].includes(kind)) return alert('Twin type must be identical or fraternal.');
+    state.relationships.twinGroups.push({ id: `TG${Date.now()}${Math.random()}`, members: [...new Set(ids)], kind });
+    redraw();
+  }
+
+  function setParentChild(parentId, childIds, adoption = false) {
+    if (!parentId || childIds.length < 1) return alert('Choose one parent and at least one child.');
+    if (childIds.includes(parentId)) return alert('A person cannot be their own parent.');
+    for (const childId of childIds) {
+      if (isAncestor(childId, parentId)) {
+        alert(`Invalid cycle: ${childId} is already an ancestor of ${parentId}.`);
+        return;
+      }
+    }
+    childIds.forEach((childId) => {
+      let rel = state.relationships.parentChild.find((r) => r.parentId === parentId && r.childId === childId);
+      if (!rel) {
+        rel = { parentId, childId, adoption: !!adoption };
+        state.relationships.parentChild.push(rel);
+      } else {
+        rel.adoption = !!adoption;
+      }
+    });
+    redraw();
+  }
+
+  function collectParentsByPartnership() {
+    const map = new Map();
+    for (const rel of state.relationships.parentChild) {
+      const child = rel.childId;
+      const parents = getParentsOf(child).sort();
+      const key = parents.join('|');
+      if (!map.has(key)) map.set(key, { parents, children: [] });
+      map.get(key).children.push(child);
+    }
+    return [...map.values()].filter((g) => g.parents.length > 0);
+  }
+
+  function relationGroupFromParents(parents) {
+    if (parents.length !== 2) return null;
+    const k = edgeKey(parents[0], parents[1]);
+    return state.relationships.partnerships.find((p) => edgeKey(p.a, p.b) === k) || null;
+  }
+
+  function drawLine(x1, y1, x2, y2, opts = {}) {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1);
+    line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2);
+    line.setAttribute('y2', y2);
+    line.setAttribute('stroke', opts.stroke || '#222');
+    line.setAttribute('stroke-width', opts.width || 2);
+    if (opts.dashed) line.setAttribute('stroke-dasharray', '6 4');
+    if (opts.className) line.setAttribute('class', opts.className);
+    canvas.appendChild(line);
+    return line;
+  }
+
+  function drawRelationships() {
+    state.relationships.partnerships.forEach((rel) => {
+      const a = getIndividual(rel.a), b = getIndividual(rel.b);
+      if (!a || !b) return;
+      drawLine(a.x + 20, a.y, b.x - 20, b.y);
+      if (rel.status === 'divorced' || rel.status === 'separated') {
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        drawLine(mx - 8, my - 9, mx + 8, my + 9);
+        if (rel.status === 'separated') drawLine(mx - 1, my - 9, mx + 15, my + 9, { dashed: true });
+      }
+    });
+
+    const familyGroups = collectParentsByPartnership();
+    familyGroups.forEach((fam) => {
+      const parentPoints = fam.parents.map((p) => getIndividual(p)).filter(Boolean);
+      const childPoints = fam.children.map((c) => getIndividual(c)).filter(Boolean);
+      if (!childPoints.length || !parentPoints.length) return;
+      let px;
+      if (parentPoints.length === 1) px = parentPoints[0].x;
+      else {
+        const pRel = relationGroupFromParents(fam.parents);
+        if (pRel) {
+          const pa = getIndividual(pRel.a), pb = getIndividual(pRel.b);
+          px = (pa.x + pb.x) / 2;
+        } else px = (parentPoints[0].x + parentPoints[1].x) / 2;
+      }
+      const topY = Math.min(...childPoints.map((c) => c.y)) - 36;
+      const parentY = Math.max(...parentPoints.map((p) => p.y)) + 20;
+      drawLine(px, parentY, px, topY);
+      const minX = Math.min(...childPoints.map((c) => c.x));
+      const maxX = Math.max(...childPoints.map((c) => c.x));
+      drawLine(minX, topY, maxX, topY);
+
+      childPoints.forEach((child) => {
+        const rel = state.relationships.parentChild.find((r) => r.parentId && r.childId === child.id && fam.parents.includes(r.parentId));
+        drawLine(child.x, topY, child.x, child.y - 20, { dashed: rel && rel.adoption });
+      });
+    });
+
+    state.relationships.twinGroups.forEach((tg) => {
+      if (tg.members.length < 2) return;
+      const inds = tg.members.map((id) => getIndividual(id)).filter(Boolean);
+      if (inds.length < 2) return;
+      const anchorY = Math.min(...inds.map((i) => i.y)) - 36;
+      const midX = inds.reduce((s, i) => s + i.x, 0) / inds.length;
+      inds.forEach((ind) => drawLine(midX, anchorY, ind.x, ind.y - 20));
+      if (tg.kind === 'identical' && inds.length === 2) {
+        drawLine(inds[0].x, inds[0].y - 20, inds[1].x, inds[1].y - 20);
+      }
+    });
+  }
+
+  function drawIndividual(ind) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', `node${state.selectedIds.has(ind.id) ? ' selected' : ''}`);
+    g.dataset.id = ind.id;
+
+    let shape;
+    if (ind.sex === 'male') {
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      shape.setAttribute('x', ind.x - 20);
+      shape.setAttribute('y', ind.y - 20);
+      shape.setAttribute('width', 40);
+      shape.setAttribute('height', 40);
+    } else if (ind.sex === 'female') {
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      shape.setAttribute('cx', ind.x);
+      shape.setAttribute('cy', ind.y);
+      shape.setAttribute('r', 20);
+    } else {
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      shape.setAttribute('points', `${ind.x},${ind.y-23} ${ind.x+23},${ind.y} ${ind.x},${ind.y+23} ${ind.x-23},${ind.y}`);
+    }
+    shape.setAttribute('class', 'node-frame');
+    shape.setAttribute('stroke', '#202228');
+    shape.setAttribute('stroke-width', '2');
+    shape.setAttribute('fill', ind.affected ? '#1d1d1f' : '#fff');
+    g.appendChild(shape);
+
+    if (ind.carrier) {
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', ind.x);
+      dot.setAttribute('cy', ind.y);
+      dot.setAttribute('r', '4');
+      dot.setAttribute('fill', ind.affected ? '#fff' : '#222');
+      g.appendChild(dot);
+    }
+
+    if (ind.deceased) {
+      drawLine(ind.x - 24, ind.y + 24, ind.x + 24, ind.y - 24);
+    }
+
+    if (ind.proband) {
+      drawLine(ind.x - 35, ind.y + 28, ind.x - 14, ind.y + 11, { width: 2.5 });
+      const tri = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      tri.setAttribute('points', `${ind.x-13},${ind.y+12} ${ind.x-8},${ind.y+19} ${ind.x-20},${ind.y+17}`);
+      tri.setAttribute('fill', '#222');
+      canvas.appendChild(tri);
+    }
+
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.textContent = ind.name || ind.id;
+    t.setAttribute('x', ind.x);
+    t.setAttribute('y', ind.y + 38);
+    t.setAttribute('class', 'node-label');
+    g.appendChild(t);
+
+    addNodeInteractions(g, ind);
+    canvas.appendChild(g);
+  }
+
+  function openTooltip(ind, x, y) {
+    const keys = ['sex','affected','proband','deceased','carrier'];
+    const customText = Object.entries(ind.customAttributes || {})
+      .filter(([,v]) => `${v}`.trim() !== '')
+      .map(([k,v]) => `<div><strong>${k}:</strong> ${String(v)}</div>`).join('');
+    tooltip.innerHTML = `
+      <div><strong>${ind.name || ind.id}</strong></div>
+      ${keys.map((k) => `<div><strong>${k}:</strong> ${String(ind[k])}</div>`).join('')}
+      ${customText}
+      <div style="margin-top:5px"><span class="edit-link" data-edit-id="${ind.id}">Edit</span></div>
+    `;
+    tooltip.style.left = `${x + 10}px`;
+    tooltip.style.top = `${y + 10}px`;
+    tooltip.style.display = 'block';
+  }
+
+  function closeTooltip() { tooltip.style.display = 'none'; }
+
+  let dragState = null;
+  function addNodeInteractions(nodeG, ind) {
+    nodeG.addEventListener('mouseenter', (e) => openTooltip(ind, e.clientX, e.clientY));
+    nodeG.addEventListener('mousemove', (e) => {
+      if (tooltip.style.display === 'block') {
+        tooltip.style.left = `${e.clientX + 10}px`;
+        tooltip.style.top = `${e.clientY + 10}px`;
+      }
+    });
+    nodeG.addEventListener('mouseleave', () => setTimeout(() => {
+      if (!tooltip.matches(':hover')) closeTooltip();
+    }, 120));
+
+    nodeG.addEventListener('pointerdown', (e) => {
+      dragState = {
+        id: ind.id,
+        startX: e.clientX,
+        startY: e.clientY,
+        ox: ind.x,
+        oy: ind.y,
+        moved: false,
+      };
+      nodeG.setPointerCapture(e.pointerId);
+    });
+    nodeG.addEventListener('pointermove', (e) => {
+      if (!dragState || dragState.id !== ind.id) return;
+      const dx = e.clientX - dragState.startX;
+      const dy = e.clientY - dragState.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragState.moved = true;
+      ind.x = dragState.ox + dx;
+      ind.y = dragState.oy + dy;
+      redraw();
+    });
+    nodeG.addEventListener('pointerup', (e) => {
+      if (!dragState || dragState.id !== ind.id) return;
+      if (!dragState.moved) {
+        const toggle = e.ctrlKey || e.metaKey;
+        if (!toggle) {
+          state.selectedIds.clear();
+          state.selectedIds.add(ind.id);
+        } else {
+          if (state.selectedIds.has(ind.id)) state.selectedIds.delete(ind.id);
+          else state.selectedIds.add(ind.id);
+        }
+        redraw();
+      }
+      dragState = null;
+    });
+
+    nodeG.addEventListener('dblclick', () => openIndividualModal(ind.id));
+  }
+
+  tooltip.addEventListener('click', (e) => {
+    const editId = e.target.getAttribute('data-edit-id');
+    if (editId) {
+      closeTooltip();
+      openIndividualModal(editId);
+    }
+  });
+
+  function redraw() {
+    canvas.innerHTML = '';
+    drawRelationships();
+    state.individuals.forEach(drawIndividual);
+    renderRelationshipEditor();
+  }
+
+  function renderRelationshipEditor() {
+    const ids = selectedIds();
+    relationshipCard.style.display = ids.length >= 2 ? 'block' : 'none';
+    selectionCountText.textContent = ids.length >= 2 ? `${ids.length} selected` : '';
+    parentSelector.innerHTML = '';
+    state.individuals.forEach((ind) => {
+      const opt = document.createElement('option');
+      opt.value = ind.id;
+      opt.textContent = `${ind.name || ind.id} (${ind.id})`;
+      if (ids.length && ids[0] === ind.id) opt.selected = true;
+      parentSelector.appendChild(opt);
+    });
+  }
+
+  const modalBackdrop = document.getElementById('individualModalBackdrop');
+  const individualForm = document.getElementById('individualForm');
+  let editingId = null;
+
+  function openIndividualModal(id) {
+    editingId = id;
+    const ind = getIndividual(id);
+    if (!ind) return;
+    const custom = state.customSchema.map((key) => `
+      <label>${key}</label>
+      <input data-field="custom.${key}" value="${escapeHtml(ind.customAttributes?.[key] ?? '')}" />
+    `).join('');
+
+    individualForm.innerHTML = `
+      <div class="grid2">
+        <div>
+          <label>ID</label>
+          <input value="${escapeHtml(ind.id)}" disabled />
+        </div>
+        <div>
+          <label>Name</label>
+          <input data-field="name" value="${escapeHtml(ind.name || '')}" />
+        </div>
+      </div>
+      <div class="grid2">
+        <div>
+          <label>Sex</label>
+          <select data-field="sex">
+            <option value="male" ${ind.sex==='male'?'selected':''}>male</option>
+            <option value="female" ${ind.sex==='female'?'selected':''}>female</option>
+            <option value="unknown" ${ind.sex==='unknown'?'selected':''}>unknown</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid2">
+        ${['affected','proband','deceased','carrier'].map((flag) => `
+          <label><input type="checkbox" data-field="${flag}" ${ind[flag] ? 'checked' : ''}/> ${flag}</label>
+        `).join('')}
+      </div>
+      <hr style="border:none;border-top:1px solid #ececf2;margin:12px 0"/>
+      ${custom || '<p class="muted">No custom fields defined. Open Schema Editor to add fields.</p>'}
+    `;
+
+    modalBackdrop.style.display = 'flex';
+  }
+
+  function saveIndividualModal() {
+    if (!editingId) return;
+    const ind = getIndividual(editingId);
+    if (!ind) return;
+    individualForm.querySelectorAll('[data-field]').forEach((input) => {
+      const field = input.dataset.field;
+      let val = input.type === 'checkbox' ? input.checked : input.value;
+      if (field.startsWith('custom.')) {
+        const k = field.slice(7);
+        ind.customAttributes[k] = val;
+      } else {
+        ind[field] = val;
+      }
+    });
+    modalBackdrop.style.display = 'none';
+    editingId = null;
+    redraw();
+  }
+
+  document.getElementById('closeIndividualModal').addEventListener('click', saveIndividualModal);
+  modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) saveIndividualModal(); });
+
+  const schemaBackdrop = document.getElementById('schemaModalBackdrop');
+  const schemaList = document.getElementById('schemaList');
+
+  function renderSchemaList() {
+    schemaList.innerHTML = '';
+    if (!state.customSchema.length) {
+      schemaList.innerHTML = '<p class="muted">No custom attributes yet.</p>';
+      return;
+    }
+    state.customSchema.forEach((attr) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.style.alignItems = 'center';
+      row.style.justifyContent = 'space-between';
+      row.style.marginBottom = '6px';
+      row.innerHTML = `<span class="chip">${escapeHtml(attr)}</span>`;
+      const btn = document.createElement('button');
+      btn.className = 'danger';
+      btn.textContent = 'Delete';
+      btn.addEventListener('click', () => deleteSchemaAttribute(attr));
+      row.appendChild(btn);
+      schemaList.appendChild(row);
+    });
+  }
+
+  function addSchemaAttribute(attr) {
+    attr = (attr || '').trim();
+    if (!attr) return alert('Enter an attribute name.');
+    if (!/^[a-zA-Z][a-zA-Z0-9_\-]*$/.test(attr)) return alert('Use letters, numbers, underscores, hyphens; first character must be a letter.');
+    if (state.customSchema.includes(attr)) return alert('Attribute already exists.');
+    state.customSchema.push(attr);
+    state.individuals.forEach((ind) => {
+      if (!ind.customAttributes) ind.customAttributes = {};
+      ind.customAttributes[attr] = '';
+    });
+    renderSchemaList();
+    redraw();
+  }
+
+  function deleteSchemaAttribute(attr) {
+    const hasData = state.individuals.some((ind) => `${ind.customAttributes?.[attr] ?? ''}`.trim() !== '');
+    if (hasData) {
+      const ok = confirm(`Attribute "${attr}" has stored values. Delete the field and all saved values?`);
+      if (!ok) return;
+    }
+    state.customSchema = state.customSchema.filter((f) => f !== attr);
+    state.individuals.forEach((ind) => {
+      if (ind.customAttributes) delete ind.customAttributes[attr];
+    });
+    renderSchemaList();
+    redraw();
+  }
+
+  function escapeHtml(v) {
+    return String(v)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function exportJson() {
+    const payload = {
+      schemaVersion: 'GA4GH-Pedigree-mapped-v1',
+      pedigreeId: `pedigree-${new Date().toISOString()}`,
+      individuals: state.individuals.map((ind) => ({
+        id: ind.id,
+        name: ind.name,
+        sex: ind.sex,
+        affected: !!ind.affected,
+        deceased: !!ind.deceased,
+        proband: !!ind.proband,
+        carrier: !!ind.carrier,
+        customAttributes: { ...(ind.customAttributes || {}) },
+        ui: { x: Math.round(ind.x), y: Math.round(ind.y) }
+      })),
+      relationships: JSON.parse(JSON.stringify(state.relationships)),
+      customSchema: [...state.customSchema],
+      mapping: {
+        NSGC: 'Bennett et al. 2008 + focused updates (2022) implemented for core symbols and lines',
+        notes: 'Non-standard relationship details are stored in relationships.* and should be ignored by strict GA4GH readers if unsupported.'
+      }
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pedigree.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importJson(file) {
+    const text = await file.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch { return alert('Invalid JSON file.'); }
+
+    if (!Array.isArray(data.individuals)) return alert('Invalid pedigree file: individuals[] is required.');
+    state.customSchema = Array.isArray(data.customSchema) ? data.customSchema : [];
+    state.individuals = data.individuals.map((ind, i) => ({
+      id: ind.id || `I${i+1}`,
+      name: ind.name || ind.id || `I${i+1}`,
+      x: Number(ind.ui?.x ?? (440 + (i%6)*110)),
+      y: Number(ind.ui?.y ?? (110 + Math.floor(i/6)*120)),
+      sex: ['male','female','unknown'].includes(ind.sex) ? ind.sex : 'unknown',
+      affected: !!ind.affected,
+      proband: !!ind.proband,
+      deceased: !!ind.deceased,
+      carrier: !!ind.carrier,
+      customAttributes: { ...(ind.customAttributes || {}) }
+    }));
+
+    state.relationships = {
+      partnerships: data.relationships?.partnerships || [],
+      siblingGroups: data.relationships?.siblingGroups || [],
+      twinGroups: data.relationships?.twinGroups || [],
+      parentChild: data.relationships?.parentChild || []
+    };
+
+    const maxNum = state.individuals
+      .map((i) => Number(String(i.id).replace(/^I/, '')))
+      .filter((n) => Number.isFinite(n))
+      .reduce((a,b) => Math.max(a,b), 0);
+    state.nextId = maxNum + 1;
+    state.selectedIds.clear();
+    redraw();
+  }
+
+  document.getElementById('addMale').addEventListener('click', () => addIndividual('male'));
+  document.getElementById('addFemale').addEventListener('click', () => addIndividual('female'));
+  document.getElementById('addUnknown').addEventListener('click', () => addIndividual('unknown'));
+
+  document.getElementById('clearSelectionBtn').addEventListener('click', () => {
+    state.selectedIds.clear();
+    redraw();
+  });
+
+  document.getElementById('mkPartner').addEventListener('click', () => setPartnership(selectedIds()));
+  document.getElementById('mkDivorce').addEventListener('click', () => setDivorce(selectedIds()));
+  document.getElementById('mkSiblings').addEventListener('click', () => setSiblings(selectedIds(), 'full'));
+  document.getElementById('mkHalfSiblings').addEventListener('click', () => setSiblings(selectedIds(), 'half'));
+  document.getElementById('mkTwins').addEventListener('click', () => setTwins(selectedIds()));
+
+  document.getElementById('mkParentChild').addEventListener('click', () => {
+    const ids = selectedIds();
+    const parentId = parentSelector.value;
+    const children = ids.filter((id) => id !== parentId);
+    setParentChild(parentId, children, false);
+  });
+
+  document.getElementById('mkAdoption').addEventListener('click', () => {
+    const ids = selectedIds();
+    if (ids.length !== 1) return alert('For adoption, select exactly one child and choose a parent from dropdown.');
+    setParentChild(parentSelector.value, ids, true);
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', exportJson);
+  document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
+  document.getElementById('importFile').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) importJson(file);
+    e.target.value = '';
+  });
+
+  document.getElementById('schemaBtn').addEventListener('click', () => {
+    renderSchemaList();
+    schemaBackdrop.style.display = 'flex';
+  });
+  document.getElementById('closeSchemaModal').addEventListener('click', () => { schemaBackdrop.style.display = 'none'; });
+  schemaBackdrop.addEventListener('click', (e) => { if (e.target === schemaBackdrop) schemaBackdrop.style.display = 'none'; });
+  document.getElementById('addAttrBtn').addEventListener('click', () => {
+    addSchemaAttribute(document.getElementById('newAttrName').value);
+    document.getElementById('newAttrName').value = '';
+  });
+
+  canvas.addEventListener('click', (e) => {
+    if (e.target === canvas) {
+      state.selectedIds.clear();
+      redraw();
+    }
+  });
+
+  redraw();
+})();
+</script>
+</body>
+</html>
