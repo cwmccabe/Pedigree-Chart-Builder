@@ -95,6 +95,19 @@
       z-index: 4;
       display: none;
     }
+    .tooltip .tooltip-close {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      border: none;
+      background: transparent;
+      font-size: 14px;
+      color: #666;
+      cursor: pointer;
+      line-height: 1;
+      padding: 2px;
+    }
+    .tooltip .tooltip-body { padding-right: 16px; }
     .tooltip .edit-link {
       color: var(--accent);
       cursor: pointer;
@@ -550,10 +563,13 @@
       .filter(([,v]) => `${v}`.trim() !== '')
       .map(([k,v]) => `<div><strong>${k}:</strong> ${String(v)}</div>`).join('');
     tooltip.innerHTML = `
-      <div><strong>${ind.name || ind.id}</strong></div>
-      ${keys.map((k) => `<div><strong>${k}:</strong> ${String(ind[k])}</div>`).join('')}
-      ${customText}
-      <div style="margin-top:5px"><span class="edit-link" data-edit-id="${ind.id}">Edit</span></div>
+      <button class="tooltip-close" type="button" data-tooltip-close="1">✕</button>
+      <div class="tooltip-body">
+        <div><strong>${ind.name || ind.id}</strong></div>
+        ${keys.map((k) => `<div><strong>${k}:</strong> ${String(ind[k])}</div>`).join('')}
+        ${customText}
+        <div style="margin-top:5px"><span class="edit-link" data-edit-id="${ind.id}">Edit</span></div>
+      </div>
     `;
     tooltip.style.left = `${x + 10}px`;
     tooltip.style.top = `${y + 10}px`;
@@ -564,17 +580,6 @@
 
   let dragState = null;
   function addNodeInteractions(nodeG, ind) {
-    nodeG.addEventListener('mouseenter', (e) => openTooltip(ind, e.clientX, e.clientY));
-    nodeG.addEventListener('mousemove', (e) => {
-      if (tooltip.style.display === 'block') {
-        tooltip.style.left = `${e.clientX + 10}px`;
-        tooltip.style.top = `${e.clientY + 10}px`;
-      }
-    });
-    nodeG.addEventListener('mouseleave', () => setTimeout(() => {
-      if (!tooltip.matches(':hover')) closeTooltip();
-    }, 120));
-
     nodeG.addEventListener('pointerdown', (e) => {
       dragState = {
         id: ind.id,
@@ -602,9 +607,11 @@
         if (!toggle) {
           state.selectedIds.clear();
           state.selectedIds.add(ind.id);
+          openTooltip(ind, e.clientX, e.clientY);
         } else {
           if (state.selectedIds.has(ind.id)) state.selectedIds.delete(ind.id);
           else state.selectedIds.add(ind.id);
+          closeTooltip();
         }
         redraw();
       }
@@ -615,10 +622,23 @@
   }
 
   tooltip.addEventListener('click', (e) => {
+    if (e.target.getAttribute('data-tooltip-close')) {
+      closeTooltip();
+      return;
+    }
     const editId = e.target.getAttribute('data-edit-id');
     if (editId) {
       closeTooltip();
       openIndividualModal(editId);
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (tooltip.style.display !== 'block') return;
+    const clickedInsideTooltip = tooltip.contains(e.target);
+    const clickedNode = !!e.target.closest('g.node');
+    if (!clickedInsideTooltip && !clickedNode) {
+      closeTooltip();
     }
   });
 
